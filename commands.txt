@@ -1,0 +1,5 @@
+python -m venv venv
+.\venv\Scripts\Activate
+
+python -m pip install pyserial matplotlib PyQt5 flask folium
+venv\Scripts\activate.bat
