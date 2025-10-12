@@ -1,14 +1,14 @@
 from flask import Flask, render_template, jsonify
-import serial
 import threading
 import time
-import os
 import math
+import requests
+import os
 
 app = Flask(__name__)
 
-# Connect to Arduino GPS on COM2
-ser = serial.Serial('COM2', 9600, timeout=1)
+ESP_IP = "10.179.182.161"  # Replace with your ESP IP
+ESP_ENDPOINT = f"http://{ESP_IP}/gps"
 
 gps_history = []
 latest_data = {'lat': None, 'lon': None, 'satellites': 0, 'speed': 0, 'distance': 0}
@@ -16,7 +16,6 @@ last_time = None
 KML_FILE = "live_path.kml"
 
 def haversine(lat1, lon1, lat2, lon2):
-    """Calculate distance between two lat/lon points in meters."""
     R = 6371000  # Earth radius in meters
     phi1 = math.radians(lat1)
     phi2 = math.radians(lat2)
@@ -27,7 +26,6 @@ def haversine(lat1, lon1, lat2, lon2):
     return R*c
 
 def write_kml():
-    """Write KML file with path and current location."""
     kml_header = '''<?xml version="1.0" encoding="UTF-8"?>
 <kml xmlns="http://www.opengis.net/kml/2.2">
 <Document>
@@ -61,51 +59,47 @@ def write_kml():
         f.write(kml_content)
 
 def read_gps_continuously():
-    """Background thread to read GPS data and update KML, distance, speed."""
     global latest_data, gps_history, last_time
     while True:
         try:
-            while ser.in_waiting:
-                line = ser.readline().decode('utf-8', errors='ignore').strip()
-                if line.startswith("Latitude:"):
-                    lat = float(line.split(":")[1].strip())
-                    lon_line = ser.readline().decode('utf-8', errors='ignore').strip()
-                    if lon_line.startswith("Longitude:"):
-                        lon = float(lon_line.split(":")[1].strip())
-                    else:
-                        continue
-                    sat_line = ser.readline().decode('utf-8', errors='ignore').strip()
-                    satellites = int(sat_line.split(":")[1].strip()) if sat_line.startswith("Satellites in use:") else 0
+            response = requests.get(ESP_ENDPOINT, timeout=2)
+            if response.status_code == 200:
+                data = response.json()
+                lat = data.get('lat')
+                lon = data.get('lon')
+                satellites = data.get('satellites', 0)
 
-                    # Calculate distance and speed
-                    distance = 0
-                    speed = 0
-                    now = time.time()
-                    if gps_history:
-                        prev_lat, prev_lon = gps_history[-1]
-                        distance = haversine(prev_lat, prev_lon, lat, lon)
-                        dt = now - last_time if last_time else 1
-                        speed = (distance / dt) * 3.6  # m/s -> km/h
-                        latest_data['distance'] += distance
-                    else:
-                        latest_data['distance'] = 0
-                    last_time = now
+                if lat is None or lon is None:
+                    time.sleep(1)
+                    continue
 
-                    latest_data.update({
-                        'lat': lat,
-                        'lon': lon,
-                        'satellites': satellites,
-                        'speed': speed
-                    })
-                    gps_history.append([lat, lon])
+                # Distance & speed calculation
+                distance = 0
+                speed = 0
+                now = time.time()
+                if gps_history:
+                    prev_lat, prev_lon = gps_history[-1]
+                    distance = haversine(prev_lat, prev_lon, lat, lon)
+                    dt = now - last_time if last_time else 1
+                    speed = (distance / dt) * 3.6  # km/h
+                    latest_data['distance'] += distance
+                else:
+                    latest_data['distance'] = 0
+                last_time = now
 
-                    # Update KML
-                    write_kml()
+                latest_data.update({
+                    'lat': lat,
+                    'lon': lon,
+                    'satellites': satellites,
+                    'speed': speed
+                })
+                gps_history.append([lat, lon])
+
+                write_kml()
         except Exception as e:
-            print("GPS read error:", e)
-        time.sleep(0.1)
+            print("GPS fetch error:", e)
+        time.sleep(1)
 
-# Start background thread
 threading.Thread(target=read_gps_continuously, daemon=True).start()
 
 @app.route('/')

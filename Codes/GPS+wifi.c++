@@ -1,56 +1,48 @@
-#include <WiFi.h>
-#include <HTTPClient.h>
+#include <ESP8266WiFi.h>
 #include <TinyGPS++.h>
-#include <HardwareSerial.h>
+#include <SoftwareSerial.h>
+#include <ESP8266WebServer.h>
 
 // Wi-Fi credentials
-const char* ssid = "YourSchoolWiFi";
-const char* password = "WiFiPassword";
+const char* ssid = "Realme Narzo 60x 5G";
+const char* password = "885854032";
 
-// Flask server URL
-const char* serverURL = "http://192.168.1.100:5000/update"; // replace with PC IP
-
-// GPS setup
+// GPS pins
+SoftwareSerial gpsSerial(D6, D7); // RX, TX
 TinyGPSPlus gps;
-HardwareSerial gpsSerial(1); // Use Serial1: RX1=16, TX1=17
+
+// Web server
+ESP8266WebServer server(80);
+
+void handleGPS() {
+  String response = "{";
+  response += "\"lat\":" + String(gps.location.lat(), 6) + ",";
+  response += "\"lon\":" + String(gps.location.lng(), 6) + ",";
+  response += "\"satellites\":" + String(gps.satellites.value());
+  response += "}";
+  server.send(200, "application/json", response);
+}
 
 void setup() {
-  Serial.begin(115200);
-  gpsSerial.begin(9600, SERIAL_8N1, 16, 17); // RX=16, TX=17
+  Serial.begin(9600);
+  gpsSerial.begin(9600);
 
-  // Connect to Wi-Fi
+  // Connect Wi-Fi
   WiFi.begin(ssid, password);
-  Serial.print("Connecting to Wi-Fi");
+  Serial.print("Connecting to WiFi");
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
     Serial.print(".");
   }
-  Serial.println("\nConnected!");
+  Serial.println("\nConnected! ESP IP: " + WiFi.localIP().toString());
+
+  server.on("/gps", handleGPS);
+  server.begin();
 }
 
 void loop() {
-  while (gpsSerial.available() > 0) {
-    char c = gpsSerial.read();
-    gps.encode(c);
-
-    if (gps.location.isUpdated()) {
-      double lat = gps.location.lat();
-      double lon = gps.location.lng();
-      double speed = gps.speed.kmph();
-      double alt = gps.altitude.meters();
-
-      // Send GPS data to Flask server
-      if (WiFi.status() == WL_CONNECTED) {
-        HTTPClient http;
-        String url = String(serverURL) + "?lat=" + String(lat,6) + "&lon=" + String(lon,6);
-        http.begin(url);
-        int httpResponseCode = http.GET();
-        http.end();
-      }
-
-      Serial.print("Sent: ");
-      Serial.print(lat,6); Serial.print(","); Serial.println(lon,6);
-      delay(1000); // 1-second delay between updates
-    }
+  server.handleClient();
+  while (gpsSerial.available()) {
+    gps.encode(gpsSerial.read());
   }
 }
