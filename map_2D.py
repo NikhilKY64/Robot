@@ -3,6 +3,7 @@ matplotlib.use("Qt5Agg")  # Use Qt backend
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 import serial
+import socket
 import argparse
 import numpy as np
 from matplotlib.colors import LinearSegmentedColormap
@@ -39,13 +40,48 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--simulate', action='store_true', help='run with simulated distance data instead of reading serial COM port')
 parser.add_argument('--port', default='COM4', help='serial port to open (ignored in --simulate)')
 parser.add_argument('--baud', type=int, default=9600, help='serial baud rate')
+parser.add_argument('--tcp', help='connect to TCP host:port instead of serial (e.g. 192.168.1.50:80)')
 args = parser.parse_args()
 
-# ---- Configure serial port (unless simulating) ----
+# ---- Configure input source (serial / tcp / simulate) ----
+# We support three modes:
+#  - simulate (args.simulate)
+#  - tcp (args.tcp, format host:port)
+#  - serial (default)
+ser = None
+sock = None
+recv_buffer = b''
+
 if args.simulate:
     ser = None
+    sock = None
 else:
-    ser = serial.Serial(args.port, args.baud, timeout=1)  # replace COM3 with your Arduino port
+    if args.tcp:
+        # parse host:port and try to connect
+        try:
+            host, port_s = args.tcp.split(':')
+            port = int(port_s)
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(1.0)
+            try:
+                sock.connect((host, port))
+            except Exception:
+                # Could not connect now; set sock to None and allow update() to retry or fall back
+                try:
+                    sock.close()
+                except Exception:
+                    pass
+                sock = None
+        except Exception:
+            sock = None
+        ser = None
+    else:
+        # try to open serial port; if it fails we leave ser=None so update() will simulate
+        try:
+            ser = serial.Serial(args.port, args.baud, timeout=1)
+        except Exception:
+            ser = None
+        sock = None
 
 # ---- Set up plot ----
 
@@ -75,16 +111,50 @@ index = 0
 
 
 def update(frame):
-    global index, fill
+    global index, fill, recv_buffer, sock, ser
     distance = None
-    # When simulating, generate a test waveform that sweeps between 0 and VMAX
-    if ser is None:
-        # simple periodic test pattern
+    line_serial = None
+
+    # First try socket (TCP) input if configured
+    if sock is not None:
+        try:
+            data = sock.recv(1024)
+            if data:
+                recv_buffer += data
+                parts = recv_buffer.split(b'\n')
+                # If we have at least one full line, take the earliest complete line
+                if len(parts) > 1:
+                    # take first complete line
+                    line_serial = parts[0].decode(errors='ignore').strip()
+                    # keep the remainder (could contain more full lines)
+                    recv_buffer = b'\n'.join(parts[1:])
+                else:
+                    line_serial = None
+            else:
+                line_serial = None
+        except socket.timeout:
+            line_serial = None
+        except Exception:
+            # On any socket error, stop using socket input
+            try:
+                sock.close()
+            except Exception:
+                pass
+            sock = None
+            line_serial = None
+
+    # If no socket or no socket line, try serial
+    if line_serial is None and ser is not None:
+        try:
+            line_serial = ser.readline().decode().strip()
+        except Exception:
+            line_serial = None
+
+    # If neither socket nor serial provided data, and simulate is enabled (both ser and sock are None), generate waveform
+    if sock is None and ser is None:
         t = index
-        # oscillate between 0 and VMAX using a sine wave scaled to the range
         distance = (VMAX / 2) * (1 + np.sin(0.1 * t))
     else:
-        line_serial = ser.readline().decode().strip()
         if line_serial:
             try:
                 distance = float(line_serial)

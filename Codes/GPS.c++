@@ -1,37 +1,31 @@
 #include <SoftwareSerial.h>
 #include <TinyGPS++.h>
 
-static const int RXPin = 4, TXPin = 3; // GPS module connected here
-static const uint32_t GPSBaud = 9600;
-
+// GPS connected to Arduino pins 4 (RX) and 3 (TX)
+SoftwareSerial gpsSerial(4, 3); // RX, TX
 TinyGPSPlus gps;
-SoftwareSerial gpsSerial(RXPin, TXPin);
 
 void setup() {
-  Serial.begin(9600);
-  gpsSerial.begin(GPSBaud);
-  Serial.println("Waiting for GPS signal...");
+  Serial.begin(9600);       // Serial Monitor
+  gpsSerial.begin(9600);    // GPS module baud rate
+  Serial.println("GPS module is ready. Waiting for data...");
 }
 
 void loop() {
   while (gpsSerial.available() > 0) {
     char c = gpsSerial.read();
+    // Feed data to TinyGPS++
     gps.encode(c);
+  }
 
-    if (gps.location.isUpdated()) {
-      double latitude = gps.location.lat();
-      double longitude = gps.location.lng();
-      double speed = gps.speed.kmph();
-      double altitude = gps.altitude.meters();
-
-      // Send data in required format
-      Serial.print(latitude, 6);
-      Serial.print(",");
-      Serial.print(longitude, 6);
-      Serial.print(",");
-      Serial.print(speed, 2);
-      Serial.print(",");
-      Serial.println(altitude, 2);
-    }
+  // Only print when a valid location is available
+  if (gps.location.isUpdated()) {
+    Serial.print("Latitude: ");
+    Serial.println(gps.location.lat(), 6); // 6 decimal places
+    Serial.print("Longitude: ");
+    Serial.println(gps.location.lng(), 6);
+    Serial.print("Satellites in use: ");
+    Serial.println(gps.satellites.value());
+    Serial.println("---------------------------");
   }
 }

@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Live GPS Tracker - Satellite</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
+    <style>
+        body { margin:0; padding:0; }
+        #map { height: 85vh; }
+        #info { height: 15vh; padding: 10px; background: #f0f0f0; font-family: Arial; }
+        #sat, #speed, #dist { font-weight: bold; }
+    </style>
+</head>
+<body>
+
+<div id="map"></div>
+<div id="info">
+    <span id="lat">Lat: </span> | 
+    <span id="lon">Lon: </span> | 
+    <span id="sat">Satellites: </span> | 
+    <span id="speed">Speed: </span> km/h | 
+    <span id="dist">Distance: </span> m
+</div>
+
+<script>
+    // Initialize map
+    var map = L.map('map', {zoomControl: true}).setView([0, 0], 5);
+
+    // Satellite tile layer (Esri)
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+        attribution: 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community',
+        maxZoom: 19
+    }).addTo(map);
+
+    var marker = L.marker([0,0]).addTo(map);
+    var path = L.polyline([], {color: 'red'}).addTo(map);
+
+    marker.bindPopup("Satellites: 0").openPopup();
+
+    var lastLat = 0;
+    var lastLon = 0;
+
+    function updateLocation() {
+        fetch('/location')
+            .then(response => response.json())
+            .then(data => {
+                if(data.lat && data.lon){
+                    var lat = data.lat;
+                    var lon = data.lon;
+                    var speed = data.speed || 0;
+                    var distance = data.distance || 0;
+                    var satellites = data.satellites || 0;
+
+                    // Update marker and path
+                    marker.setLatLng([lat, lon]);
+                    path.setLatLngs(data.path);
+
+                    // Pan map smoothly
+                    if(Math.abs(map.getCenter().lat - lastLat) < 0.01 && Math.abs(map.getCenter().lng - lastLon) < 0.01){
+                        map.panTo([lat, lon], {animate: true, duration: 1});
+                    }
+
+                    lastLat = lat;
+                    lastLon = lon;
+
+                    // Update popup
+                    marker.getPopup().setContent("Satellites: " + satellites);
+
+                    // Update info panel
+                    document.getElementById('lat').innerText = 'Lat: ' + lat.toFixed(6);
+                    document.getElementById('lon').innerText = 'Lon: ' + lon.toFixed(6);
+                    document.getElementById('speed').innerText = 'Speed: ' + speed.toFixed(2);
+                    document.getElementById('dist').innerText = 'Distance: ' + distance.toFixed(2);
+
+                    var satElem = document.getElementById('sat');
+                    satElem.innerText = 'Satellites: ' + satellites;
+                    if(satellites < 4){
+                        satElem.style.color = 'red';
+                    } else if(satellites < 8){
+                        satElem.style.color = 'orange';
+                    } else {
+                        satElem.style.color = 'green';
+                    }
+
+                    // Keep last 50 points only
+                    if(data.path.length > 50){
+                        path.setLatLngs(data.path.slice(-50));
+                    }
+                }
+            })
+            .catch(err => console.log(err));
+    }
+
+    setInterval(updateLocation, 2000);
+</script>
+
+</body>
+</html>
