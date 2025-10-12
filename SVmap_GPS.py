@@ -72,7 +72,7 @@ threading.Thread(target=read_gps, daemon=True).start()
 
 @app.route('/')
 def index():
-    return render_template('index.html')
+    return render_template('indexSV.html')
 
 @app.route('/location')
 def location():
