@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Live GPS Tracker - Satellite</title>
+    <title>Live GPS Tracker</title>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
@@ -10,92 +10,105 @@
 
     <style>
         body { margin:0; padding:0; }
-        #map { height: 85vh; }
-        #info { height: 15vh; padding: 10px; background: #f0f0f0; font-family: Arial; }
+        #map { height: 80vh; }
+        #info { height: 20vh; padding: 10px; background: #f0f0f0; font-family: Arial; }
         #sat, #speed, #dist { font-weight: bold; }
+        #controls { margin-top: 5px; }
+        button { padding: 5px 10px; margin-right: 5px; }
     </style>
 </head>
 <body>
 
 <div id="map"></div>
 <div id="info">
-    <span id="lat">Lat: </span> | 
-    <span id="lon">Lon: </span> | 
-    <span id="sat">Satellites: </span> | 
-    <span id="speed">Speed: </span> km/h | 
-    <span id="dist">Distance: </span> m
+    <div>
+        <span id="lat">Lat: </span> | 
+        <span id="lon">Lon: </span> | 
+        <span id="sat">Satellites: </span> | 
+        <span id="speed">Speed: </span> km/h | 
+        <span id="dist">Distance: </span> m
+    </div>
+    <div id="controls">
+        <button id="toggleCenter">Freeze Map View</button>
+        <button id="defaultView">Default View</button>
+        <button id="satelliteView">Satellite View</button>
+    </div>
 </div>
 
 <script>
-    // Initialize map
     var map = L.map('map', {zoomControl: true}).setView([0, 0], 5);
 
-    // Satellite tile layer (Esri)
-    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-        attribution: 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community',
+    // Tile layers
+    var defaultLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap contributors',
         maxZoom: 19
-    }).addTo(map);
+    });
+
+    var satelliteLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+        attribution: 'Tiles &copy; Esri',
+        maxZoom: 19
+    });
+
+    // Start with default view
+    defaultLayer.addTo(map);
+
+    // Layer switch buttons
+    document.getElementById('defaultView').addEventListener('click', () => {
+        map.removeLayer(satelliteLayer);
+        map.addLayer(defaultLayer);
+    });
+    document.getElementById('satelliteView').addEventListener('click', () => {
+        map.removeLayer(defaultLayer);
+        map.addLayer(satelliteLayer);
+    });
 
     var marker = L.marker([0,0]).addTo(map);
-    var path = L.polyline([], {color: 'red'}).addTo(map);
-
     marker.bindPopup("Satellites: 0").openPopup();
 
-    var lastLat = 0;
-    var lastLon = 0;
+    var path = L.polyline([], {color: 'red'}).addTo(map);
+
+    var autoCenter = true; // toggle auto-centering
+    document.getElementById('toggleCenter').addEventListener('click', () => {
+        autoCenter = !autoCenter;
+        document.getElementById('toggleCenter').innerText = autoCenter ? 'Freeze Map View' : 'Auto-Center Enabled';
+    });
 
     function updateLocation() {
         fetch('/location')
-            .then(response => response.json())
+            .then(res => res.json())
             .then(data => {
                 if(data.lat && data.lon){
-                    var lat = data.lat;
-                    var lon = data.lon;
-                    var speed = data.speed || 0;
-                    var distance = data.distance || 0;
-                    var satellites = data.satellites || 0;
+                    const lat = data.lat;
+                    const lon = data.lon;
+                    const speed = data.speed || 0;
+                    const distance = data.distance || 0;
+                    const satellites = data.satellites || 0;
 
                     // Update marker and path
                     marker.setLatLng([lat, lon]);
                     path.setLatLngs(data.path);
 
-                    // Pan map smoothly
-                    if(Math.abs(map.getCenter().lat - lastLat) < 0.01 && Math.abs(map.getCenter().lng - lastLon) < 0.01){
+                    if(autoCenter){
                         map.panTo([lat, lon], {animate: true, duration: 1});
                     }
 
-                    lastLat = lat;
-                    lastLon = lon;
-
-                    // Update popup
-                    marker.getPopup().setContent("Satellites: " + satellites);
-
-                    // Update info panel
+                    // Info panel
                     document.getElementById('lat').innerText = 'Lat: ' + lat.toFixed(6);
                     document.getElementById('lon').innerText = 'Lon: ' + lon.toFixed(6);
                     document.getElementById('speed').innerText = 'Speed: ' + speed.toFixed(2);
                     document.getElementById('dist').innerText = 'Distance: ' + distance.toFixed(2);
 
-                    var satElem = document.getElementById('sat');
+                    const satElem = document.getElementById('sat');
                     satElem.innerText = 'Satellites: ' + satellites;
-                    if(satellites < 4){
-                        satElem.style.color = 'red';
-                    } else if(satellites < 8){
-                        satElem.style.color = 'orange';
-                    } else {
-                        satElem.style.color = 'green';
-                    }
+                    satElem.style.color = satellites < 4 ? 'red' : satellites < 8 ? 'orange' : 'green';
 
-                    // Keep last 50 points only
-                    if(data.path.length > 50){
-                        path.setLatLngs(data.path.slice(-50));
-                    }
+                    marker.getPopup().setContent(`Satellites: ${satellites}<br>Speed: ${speed.toFixed(2)} km/h`);
                 }
             })
             .catch(err => console.log(err));
     }
 
-    setInterval(updateLocation, 2000);
+    setInterval(updateLocation, 1000);
 </script>
 
 </body>
