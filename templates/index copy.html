@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Live GPS Tracker</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <!-- Leaflet CSS/JS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
+    <style>
+        body { margin:0; padding:0; }
+        #map { height: 90vh; }
+        #info { height: 10vh; padding: 10px; background: #f0f0f0; font-family: Arial; }
+    </style>
+</head>
+<body>
+
+<div id="map"></div>
+<div id="info">
+    <span id="lat">Lat: </span> | 
+    <span id="lon">Lon: </span> | 
+    <span id="speed">Speed: </span> km/h | 
+    <span id="alt">Altitude: </span> m
+</div>
+
+<script>
+    var map = L.map('map').setView([0, 0], 2);
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: 'Map data © <a href="https://openstreetmap.org">OpenStreetMap</a>',
+        maxZoom: 19
+    }).addTo(map);
+
+    var marker = L.marker([0,0]).addTo(map);
+    var path = L.polyline([], {color: 'red'}).addTo(map);
+
+    function updateLocation() {
+        fetch('/location')
+            .then(response => response.json())
+            .then(data => {
+                if(data.lat && data.lon){
+                    var lat = data.lat;
+                    var lon = data.lon;
+                    var speed = data.speed;
+                    var alt = data.altitude;
+
+                    marker.setLatLng([lat, lon]);
+                    path.setLatLngs(data.path);
+                    map.setView([lat, lon], 16);
+
+                    document.getElementById('lat').innerText = 'Lat: ' + lat.toFixed(6);
+                    document.getElementById('lon').innerText = 'Lon: ' + lon.toFixed(6);
+                    document.getElementById('speed').innerText = 'Speed: ' + speed.toFixed(2);
+                    document.getElementById('alt').innerText = 'Altitude: ' + alt.toFixed(2);
+                }
+            })
+            .catch(err => console.log(err));
+    }
+
+    setInterval(updateLocation, 2000); // update every 2 seconds
+</script>
+
+</body>
+</html>

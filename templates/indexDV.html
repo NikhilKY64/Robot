@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Live GPS Tracker - Satellite</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
+    <style>
+        body { margin:0; padding:0; }
+        #map { height: 80vh; }
+        #info { height: 20vh; padding: 10px; background: #f0f0f0; font-family: Arial; }
+        #sat, #speed, #dist { font-weight: bold; }
+        #controls { margin-top: 5px; }
+        button { padding: 5px 10px; }
+    </style>
+</head>
+<body>
+
+<div id="map"></div>
+<div id="info">
+    <div>
+        <span id="lat">Lat: </span> | 
+        <span id="lon">Lon: </span> | 
+        <span id="sat">Satellites: </span> | 
+        <span id="speed">Speed: </span> km/h | 
+        <span id="dist">Distance: </span> m
+    </div>
+    <div id="controls">
+        <button id="toggleCenter">Freeze Map View</button>
+    </div>
+</div>
+
+<script>
+    var map = L.map('map', {zoomControl: true}).setView([0, 0], 5);
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: 'Tiles &copy; Esri',
+        maxZoom: 19
+    }).addTo(map);
+
+    var marker = L.marker([0,0]).addTo(map);
+    marker.bindPopup("Satellites: 0").openPopup();
+
+    var path = L.polyline([], {color: 'red'}).addTo(map);
+
+    var autoCenter = true; // toggle auto-centering
+    document.getElementById('toggleCenter').addEventListener('click', () => {
+        autoCenter = !autoCenter;
+        document.getElementById('toggleCenter').innerText = autoCenter ? 'Freeze Map View' : 'Auto-Center Enabled';
+    });
+
+    function updateLocation() {
+        fetch('/location')
+            .then(res => res.json())
+            .then(data => {
+                if(data.lat && data.lon){
+                    const lat = data.lat;
+                    const lon = data.lon;
+                    const speed = data.speed || 0;
+                    const distance = data.distance || 0;
+                    const satellites = data.satellites || 0;
+
+                    // Update marker and path
+                    marker.setLatLng([lat, lon]);
+                    path.setLatLngs(data.path);
+
+                    // Auto-center if enabled
+                    if(autoCenter){
+                        map.panTo([lat, lon], {animate: true, duration: 1});
+                    }
+
+                    // Update info panel
+                    document.getElementById('lat').innerText = 'Lat: ' + lat.toFixed(6);
+                    document.getElementById('lon').innerText = 'Lon: ' + lon.toFixed(6);
+                    document.getElementById('speed').innerText = 'Speed: ' + speed.toFixed(2);
+                    document.getElementById('dist').innerText = 'Distance: ' + distance.toFixed(2);
+
+                    const satElem = document.getElementById('sat');
+                    satElem.innerText = 'Satellites: ' + satellites;
+                    satElem.style.color = satellites < 4 ? 'red' : satellites < 8 ? 'orange' : 'green';
+
+                    // Update marker popup
+                    marker.getPopup().setContent(`Satellites: ${satellites}<br>Speed: ${speed.toFixed(2)} km/h`);
+                }
+            })
+            .catch(err => console.log(err));
+    }
+
+    setInterval(updateLocation, 1000); // update every second
+</script>
+
+</body>
+</html>
